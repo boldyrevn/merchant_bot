@@ -3,8 +3,9 @@ from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from ..keyboards import kb_chose_entity, ikb_countries
-from ..misc import format_country
+from ..database import DataBase
+from ..keyboards import kb_chose_entity, kb_main_menu, ikb_countries, ikb_profile
+from ..misc import format_country, show_profile
 
 
 class Add(StatesGroup):
@@ -16,7 +17,6 @@ class Add(StatesGroup):
     input_username = State()
     input_description = State()
     show_result = State()
-    save_result = State()
 
 
 add = Router()
@@ -25,6 +25,7 @@ add = Router()
 @add.message(F.text == "➕Добавить")
 async def add_entity(message: Message, state: FSMContext):
     await state.set_state(Add.choose_type)
+    await state.update_data(profile_is_ready=False)
     await message.answer("Выберите, кого вы хотите добавить", reply_markup=kb_chose_entity)
 
 
@@ -90,22 +91,91 @@ async def delete_country(message: Message, state: FSMContext):
 
 @add.callback_query(F.data == "goto_input_name")
 async def invite_input_name(call: CallbackQuery, state: FSMContext):
-    await state.set_state(Add.input_name)
-    await call.message.answer("Введите имя, которое будет отображаться при поиске")
-    await call.answer()
+    data = await state.get_data()
+    if data['profile_is_ready']:
+        await call.message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
+        await state.set_state(Add.show_result)
+        await call.answer()
+    else:
+        await state.set_state(Add.input_name)
+        await call.message.answer("Введите имя, которое будет отображаться при поиске")
+        await call.answer()
 
 
 @add.message(Add.input_name)
 async def input_name(message: Message, state: FSMContext):
     name = message.text.strip()
     await state.update_data(name=name)
-    await message.answer("Введите юзернейм телеграм в формате @username")
-    await state.set_state(Add.input_username)
+    data = await state.get_data()
+    if data['profile_is_ready']:
+        await message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
+        await state.set_state(Add.show_result)
+    else:
+        await message.answer("Введите юзернейм телеграм в формате @username")
+        await state.set_state(Add.input_username)
 
 
 @add.message(Add.input_username)
 async def input_username(message: Message, state: FSMContext):
     username = message.text.strip()
     await state.update_data(username=username)
-    await message.answer("Введите описание")
+    data = await state.get_data()
+    if data['profile_is_ready']:
+        await message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
+        await state.set_state(Add.show_result)
+    else:
+        await message.answer("Введите описание")
+        await state.set_state(Add.input_description)
+
+
+@add.message(Add.input_description)
+async def input_description(message: Message, state: FSMContext):
+    description = message.text.strip()
+    await state.update_data(description=description, profile_is_ready=True)
+    await state.set_state(Add.show_result)
+    data = await state.get_data()
+    await message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
+
+
+@add.callback_query(F.data == "change_name", Add.show_result)
+async def change_name(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Add.input_name)
+    await call.message.answer("Введите новое имя")
+    await call.answer()
+
+
+@add.callback_query(F.data == "change_username", Add.show_result)
+async def change_username(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Add.input_username)
+    await call.message.answer("Введите новый юзернейм")
+    await call.answer()
+
+
+@add.callback_query(F.data == "change_description", Add.show_result)
+async def change_description(call: CallbackQuery, state: FSMContext):
     await state.set_state(Add.input_description)
+    await call.message.answer("Введите новое описание")
+    await call.answer()
+
+
+@add.callback_query(F.data == "change_countries", Add.show_result)
+async def change_countries(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Add.input_country)
+    countries: list = (await state.get_data())['countries']
+    answer_string = '\n'.join([f'▪ {country}' for country in countries])
+    await call.message.answer(text="Трафик есть в следующих странах:\n" + answer_string,
+                              reply_markup=ikb_countries)
+    await call.answer()
+
+
+@add.callback_query(F.data == "save_profile", Add.show_result)
+async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
+    data = await state.get_data()
+    if data['entity_type'] == 'trader':
+        pass
+    else:
+        await db.add_merchant(data)
+    await call.message.answer("Данные успешно сохранены", reply_markup=kb_main_menu)
+    await state.clear()
+    await call.answer()
+

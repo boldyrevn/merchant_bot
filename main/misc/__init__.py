@@ -1,1 +1,1 @@
-from .funcs import set_commands, format_country
+from .funcs import set_commands, format_country, show_profile
