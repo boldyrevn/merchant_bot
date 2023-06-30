@@ -7,3 +7,7 @@ kb_main_menu = ReplyKeyboardMarkup(keyboard=[
 kb_chose_entity = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="Мерчант"), KeyboardButton(text="Площадка"), KeyboardButton(text="Трейдер")]
 ], resize_keyboard=True)
+
+kb_chose_find = ReplyKeyboardMarkup(keyboard=[
+    [KeyboardButton(text="Трафик"), KeyboardButton(text="Инструмент"), KeyboardButton(text="Поиск по юзернейму")]
+], resize_keyboard=True)

@@ -6,7 +6,7 @@ import asyncpg
 from aiogram import Bot, Dispatcher
 
 from .database import DataBase
-from .handlers import root, add
+from .handlers import root, add, find
 from .misc import set_commands
 
 
@@ -27,6 +27,7 @@ async def start() -> None:
     db = DataBase(connection)
 
     root.include_router(add)
+    root.include_router(find)
     dp.include_router(root)
 
     dp.startup.register(on_start)
