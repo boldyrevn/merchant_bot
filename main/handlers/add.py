@@ -172,7 +172,7 @@ async def change_countries(call: CallbackQuery, state: FSMContext):
 async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
     data = await state.get_data()
     if data['entity_type'] == 'trader':
-        pass
+        await db.add_trader(data)
     else:
         await db.add_merchant(data)
     await call.message.answer("Данные успешно сохранены", reply_markup=kb_main_menu)

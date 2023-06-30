@@ -70,3 +70,28 @@ class DataBase:
                     INSERT INTO merchants_countries(merchant_id, country) VALUES 
                     ({merchant_id}, '{countries[i]}')
                 """)
+
+    async def add_trader(self, data: dict) -> None:
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                INSERT INTO traders(name, username, description) VALUES
+                ('{data['name']}', '{data['username']}', '{data['description']}');
+            """)
+            trader_id = await self.get_trader_id(data['name'], data['username'])
+            await self.add_trader_countries(trader_id, data['countries'])
+
+    async def get_trader_id(self, name: str, username: str) -> int:
+        async with self.conn.transaction():
+            trader_id: int = await self.conn.fetchval(f"""
+                SELECT id FROM traders
+                WHERE name = '{name}' AND username = '{username}';
+            """)
+        return trader_id
+
+    async def add_trader_countries(self, trader_id: int, countries: Sequence[str]) -> None:
+        async with self.conn.transaction():
+            for i in range(len(countries)):
+                await self.conn.execute(f"""
+                    INSERT INTO traders_countries(trader_id, country) VALUES 
+                    ({trader_id}, '{countries[i]}')
+                """)
