@@ -170,3 +170,47 @@ class DataBase:
         }
         return data
 
+    async def delete_merchant(self, merchant_id: int) -> None:
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                DELETE FROM merchants WHERE id = {merchant_id};
+            """)
+
+    async def delete_trader(self, trader_id: int) -> None:
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                DELETE FROM traders WHERE id = {trader_id};
+            """)
+
+    async def delete_merchant_countries(self, merchant_id: int) -> None:
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                DELETE FROM merchants_countries WHERE merchant_id = {merchant_id};
+            """)
+
+    async def delete_trader_countries(self, trader_id: int) -> None:
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                DELETE FROM traders_countries WHERE trader_id = {trader_id};
+            """)
+
+    async def update_merchant(self, data: dict) -> None:
+        await self.delete_merchant_countries(data['id'])
+        await self.add_merchant_countries(data['id'], data['countries'])
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                UPDATE merchants SET name = '{data['name']}', username = '{data['username']}',
+                description = '{data['description']}' WHERE id = {data['id']}
+            """)
+
+    async def update_trader(self, data: dict) -> None:
+        await self.delete_trader_countries(data['id'])
+        await self.add_trader_countries(data['id'], data['countries'])
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                UPDATE traders SET name = '{data['name']}', username = '{data['username']}',
+                description = '{data['description']}' WHERE id = {data['id']}
+            """)
+
+
+

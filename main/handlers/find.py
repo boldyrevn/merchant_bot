@@ -4,7 +4,8 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
 
 from ..database import DataBase
-from ..keyboards import kb_chose_find, ikb_choose_profile, ikb_profile_find
+from ..keyboards import kb_chose_find, kb_main_menu,\
+    ikb_choose_profile, ikb_profile_find, ikb_profile, ikb_you_sure
 from ..misc import format_country, show_profile_db
 
 
@@ -12,8 +13,14 @@ class Find(StatesGroup):
     choose_type = State()
     input_country = State()
     input_username = State()
+    input_profile_num = State()
     show_profile = State()
     edit_profile = State()
+    edit_name = State()
+    edit_username = State()
+    edit_description = State()
+    edit_countries = State()
+    delete_profile = State()
 
 
 find = Router()
@@ -56,12 +63,12 @@ async def find_performer(message: Message, state: FSMContext, db: DataBase):
 
 @find.callback_query(F.data == "choose_profile")
 async def choose_profile(call: CallbackQuery, state: FSMContext):
-    await state.set_state(Find.show_profile)
+    await state.set_state(Find.input_profile_num)
     await call.message.answer("Введите номер профиля, который хотите просмотреть")
     await call.answer()
 
 
-@find.message(Find.show_profile)
+@find.message(Find.input_profile_num)
 async def show_profile(message: Message, state: FSMContext, db: DataBase):
     index = int(message.text)
     data = await state.get_data()
@@ -74,5 +81,116 @@ async def show_profile(message: Message, state: FSMContext, db: DataBase):
         person_id = await db.get_trader_id(name)
         data = await db.get_trader_data(person_id)
     await state.set_data(data)
+    await state.set_state(Find.show_profile)
     await state.update_data(persn_id=person_id)
     await message.answer(show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
+
+
+@find.callback_query(F.data == "delete_profile")
+async def are_you_sure(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await state.set_state(Find.delete_profile)
+    await call.message.answer(text=f"Вы точно хотите удалить профиль '{data['name']}'?",
+                              reply_markup=ikb_you_sure)
+    await call.answer()
+
+
+@find.callback_query(F.data == "yes", Find.delete_profile)
+async def delete_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
+    data = await state.get_data()
+    if data['type'] == "trader":
+        await db.delete_trader(data['id'])
+    else:
+        await db.delete_merchant(data['id'])
+    await call.message.answer("Профиль удален", reply_markup=kb_main_menu)
+    await call.answer()
+    await state.clear()
+
+
+@find.callback_query(F.data == "no", Find.delete_profile)
+async def not_delete_profile(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await state.set_state(Find.show_profile)
+    await call.message.answer(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
+
+
+@find.callback_query(F.data == "edit_profile")
+async def change_profile(call: CallbackQuery, state: FSMContext):
+    await call.message.edit_reply_markup(reply_markup=ikb_profile)
+    await state.set_state(Find.edit_profile)
+
+
+@find.callback_query(F.data == "change_name", Find.edit_profile)
+async def call_change_name(call: CallbackQuery, state: FSMContext):
+    await call.message.answer("Введите новое имя")
+    await state.set_state(Find.edit_name)
+    await call.answer()
+
+
+@find.message(Find.edit_name)
+async def change_name(message: Message, state: FSMContext):
+    name = message.text.strip()
+    await state.update_data(name=name)
+    await state.set_state(Find.edit_profile)
+    data = await state.get_data()
+    await message.answer(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile)
+
+
+@find.callback_query(F.data == "change_username", Find.edit_profile)
+async def call_change_username(call: CallbackQuery, state: FSMContext):
+    await call.message.answer("Введите новый юзернейм")
+    await state.set_state(Find.edit_username)
+    await call.answer()
+
+
+@find.message(Find.edit_username)
+async def change_username(message: Message, state: FSMContext):
+    username = message.text.strip()
+    await state.update_data(username=username)
+    await state.set_state(Find.edit_profile)
+    data = await state.get_data()
+    await message.answer(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile)
+
+
+@find.callback_query(F.data == "change_description", Find.edit_profile)
+async def call_change_description(call: CallbackQuery, state: FSMContext):
+    await call.message.answer("Введите новое описание")
+    await state.set_state(Find.edit_description)
+    await call.answer()
+
+
+@find.message(Find.edit_description)
+async def change_description(message: Message, state: FSMContext):
+    description = message.text.strip()
+    await state.update_data(description=description)
+    await state.set_state(Find.edit_profile)
+    data = await state.get_data()
+    await message.answer(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile)
+
+
+@find.callback_query(F.data == "change_countries", Find.edit_profile)
+async def call_change_countries(call: CallbackQuery, state: FSMContext):
+    await call.message.answer("Введите новый список стран через запятую")
+    await state.set_state(Find.edit_countries)
+    await call.answer()
+
+
+@find.message(Find.edit_countries)
+async def change_countries(message: Message, state: FSMContext):
+    countries = [format_country(country) for country in message.text.split(sep=',')]
+    await state.update_data(countries=countries)
+    await state.set_state(Find.edit_profile)
+    data = await state.get_data()
+    await message.answer(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile)
+
+
+@find.callback_query(F.data == "save_profile", Find.edit_profile)
+async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
+    data = await state.get_data()
+    if data['type'] == "trader":
+        await db.update_trader(data)
+    else:
+        await db.update_merchant(data)
+    await state.set_state(Find.show_profile)
+    await call.message.edit_text(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
+    await call.answer("Профиль сохранен")
