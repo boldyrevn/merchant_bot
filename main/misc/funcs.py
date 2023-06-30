@@ -19,11 +19,20 @@ def format_country(country: str) -> str:
 def show_profile(data: dict) -> str:
     roles = {"merchant": "Мерчант", "platform": "Площадка", "trader": "Трейдер"}
     countries_list = '\n'.join([f'▪ {country}' for country in data['countries']])
-    profile_text = f"<strong>{roles[data['entity_type']]}</strong>\n" \
+    profile_text = f"<strong>{roles[data['type']]}</strong>\n" \
                    f"<em>Имя</em>: {data['name']}\n" \
                    f"<em>Юзернейм</em>: {data['username']}\n" \
                    f"<em>Список стран</em>:\n" \
                    f"{countries_list}\n" \
-                   f"<em>Описание</em>: {data['description']}"
+                   f"<em>Описание</em>: {data['description']}\n"
+    return profile_text
 
+
+def show_profile_db(data: dict) -> str:
+    profile_text = show_profile(data)
+    if not data['partners']:
+        profile_text += "<em>Ни с кем не срощен</em>"
+    else:
+        partners_list = '\n'.join([f" - '{partner}'\n" for partner in data['partners']])
+        profile_text += f"<em>Срощен с</em>:\n{partners_list}"
     return profile_text

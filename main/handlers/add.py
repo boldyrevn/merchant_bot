@@ -32,7 +32,7 @@ async def add_entity(message: Message, state: FSMContext):
 @add.message(Add.choose_type)
 async def choose_type(message: Message, state: FSMContext):
     types = {"Мерчант": "merchant", "Площадка": "platform", "Трейдер": "trader"}
-    await state.update_data(entity_type=types[message.text])
+    await state.update_data(type=types[message.text])
     await state.set_state(Add.input_country)
     await message.answer(text="Введите через запятую страны, в которых есть трафик",
                          reply_markup=ReplyKeyboardRemove())
@@ -171,7 +171,7 @@ async def change_countries(call: CallbackQuery, state: FSMContext):
 @add.callback_query(F.data == "save_profile", Add.show_result)
 async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
     data = await state.get_data()
-    if data['entity_type'] == 'trader':
+    if data['type'] == 'trader':
         await db.add_trader(data)
     else:
         await db.add_merchant(data)

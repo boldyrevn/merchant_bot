@@ -14,15 +14,13 @@ class DataBase:
                     name VARCHAR(64),
                     username VARCHAR(64),
                     type VARCHAR(16),
-                    description TEXT,
-                    partner_id INTEGER
+                    description TEXT
                 );
                 CREATE TABLE IF NOT EXISTS traders(
                     id SERIAL PRIMARY KEY,
                     name VARCHAR(64),
                     username VARCHAR(64),
-                    description TEXT,
-                    partner_id INTEGER
+                    description TEXT
                 );
                 CREATE TABLE IF NOT EXISTS matches(
                     merchant_id INTEGER,
@@ -52,7 +50,7 @@ class DataBase:
         async with self.conn.transaction():
             await self.conn.execute(f"""
                 INSERT INTO merchants(name, username, type, description) VALUES
-                ('{data['name']}', '{data['username']}', '{data['entity_type']}', '{data['description']}');
+                ('{data['name']}', '{data['username']}', '{data['type']}', '{data['description']}');
             """)
             merchant_id = await self.get_merchant_id(data['name'])
             await self.add_merchant_countries(merchant_id, data['countries'])
@@ -121,4 +119,54 @@ class DataBase:
         for record in results:
             traders.append(record['name'])
         return traders
+
+    async def get_merchant_data(self, merchant_id: int) -> dict:
+        async with self.conn.transaction():
+            result: asyncpg.Record = await self.conn.fetchrow(f"""
+                SELECT id, name, username, type, description 
+                FROM merchants WHERE merchants.id = {merchant_id};
+            """)
+            countries: list[asyncpg.Record] = await self.conn.fetch(f"""
+                SELECT country FROM merchants_countries 
+                WHERE merchant_id = {merchant_id};
+            """)
+            partners: list[asyncpg.Record] = await self.conn.fetch(f"""
+                SELECT name FROM matches JOIN traders t on matches.trader_id = t.id
+                WHERE merchant_id = {merchant_id};
+            """)
+        data = {
+            'id': result['id'],
+            'name': result['name'],
+            'username': result['username'],
+            'type': result['type'],
+            'description': result['description'],
+            'countries': [record['country'] for record in countries],
+            'partners': [record['name'] for record in partners]
+        }
+        return data
+
+    async def get_trader_data(self, trader_id: int) -> dict:
+        async with self.conn.transaction():
+            result: asyncpg.Record = await self.conn.fetchrow(f"""
+                SELECT id, name, username, description 
+                FROM traders WHERE traders.id = {trader_id};
+            """)
+            countries: list[asyncpg.Record] = await self.conn.fetch(f"""
+                SELECT country FROM traders_countries 
+                WHERE trader_id = {trader_id};
+            """)
+            partners: list[asyncpg.Record] = await self.conn.fetch(f"""
+                SELECT name FROM matches JOIN merchants m on matches.merchant_id = m.id
+                WHERE trader_id = {trader_id};
+            """)
+        data = {
+            'id': result['id'],
+            'name': result['name'],
+            'username': result['username'],
+            'type': "trader",
+            'description': result['description'],
+            'countries': [record['country'] for record in countries],
+            'partners': [record['name'] for record in partners]
+        }
+        return data
 
