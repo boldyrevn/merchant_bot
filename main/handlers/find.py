@@ -52,6 +52,9 @@ async def choose_find_type(messsage: Message, state: FSMContext):
 async def search_by_username(message: Message, state: FSMContext, db: DataBase):
     username = message.text.strip()
     result = await db.search_by_username(username)
+    if result[0] is None:
+        await message.answer("Неверный юзернейм, введите заново")
+        return
     if result[1] == "merchant":
         data = await db.get_merchant_data(result[0])
     else:

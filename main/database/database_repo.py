@@ -283,3 +283,11 @@ class DataBase:
         if merchant_id is not None:
             return merchant_id, 'merchant'
         return trader_id, 'trader'
+
+    async def get_all_matches(self) -> list[tuple[str, str, str]]:
+        records: list[asyncpg.Record] = await self.conn.fetch(f"""
+            SELECT type, merchants.name merchant, t.name trader 
+            FROM merchants JOIN matches m on merchants.id = m.merchant_id
+            JOIN traders t on m.trader_id = t.id
+        """)
+        return [(record['type'], record['merchant'], record['trader']) for record in records]

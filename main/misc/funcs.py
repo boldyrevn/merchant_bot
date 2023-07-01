@@ -63,3 +63,9 @@ def show_matched_merchants(merchants: list[tuple[str, str, str]]) -> str:
     answer_string = f"<strong>Совпадения:</strong>\n" \
                     f"{merchants_list}"
     return answer_string
+
+
+def show_matches(matches: list[tuple[str, str, str]]) -> str:
+    types = {"merchant": "мерчант", "platform": "площадка"}
+    match_list = '\n'.join([f'- {types[match[0]]} "{match[1]}" -> трейдер "{match[2]}"' for match in matches])
+    return f"<strong>Совпадения:</strong>\n{match_list}"

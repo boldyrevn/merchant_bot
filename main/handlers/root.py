@@ -1,9 +1,11 @@
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 
+from ..database import DataBase
 from ..keyboards import kb_main_menu
+from ..misc import show_matches
 
 root = Router()
 
@@ -18,3 +20,9 @@ async def start_command(message: Message):
 async def reset_command(message: Message, state: FSMContext):
     await message.answer("Все изменения отменены", reply_markup=kb_main_menu)
     await state.clear()
+
+
+@root.message(F.text == "🤝Совпадения")
+async def list_matches(message: Message, db: DataBase):
+    matches = await db.get_all_matches()
+    await message.answer(text=show_matches(matches), parse_mode="HTML")
