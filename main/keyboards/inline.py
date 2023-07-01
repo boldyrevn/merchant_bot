@@ -32,5 +32,5 @@ ikb_you_sure = InlineKeyboardMarkup(inline_keyboard=[
 
 ikb_show_matches = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Назад", callback_data="back_to_profile"),
-     InlineKeyboardButton(text="Сросить", callback_data="make_match")]
+     InlineKeyboardButton(text="Сростить", callback_data="make_match")]
 ])

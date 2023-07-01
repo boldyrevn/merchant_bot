@@ -1,3 +1,4 @@
+import asyncpg
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -39,15 +40,24 @@ async def choose_type(message: Message, state: FSMContext):
 
 
 @add.message(Add.input_country)
-async def set_countries(message: Message, state: FSMContext):
-    countries = [format_country(country) for country in message.text.split(sep=',')]
+async def set_countries(message: Message, state: FSMContext, country_list: list[str]):
+    try:
+        countries = [format_country(country) for country in message.text.split(sep=',')]
+        for country in countries:
+            assert country in country_list, country
+    except IndexError:
+        await message.answer("Вводите страны строго через запятую")
+        return
+    except AssertionError as e:
+        await message.answer(f'Вы неправильно ввели название одной из стран: "{e}"')
+        return
     await state.update_data(countries=countries)
     answer_string = '\n'.join([f'▪ {country}' for country in countries])
     await message.answer(text="Трафик есть в следующих странах:\n" + answer_string,
                          reply_markup=ikb_countries)
 
 
-@add.callback_query(F.data == "add_countries")
+@add.callback_query(F.data == "add_countries", Add.input_country)
 async def add_countries(call: CallbackQuery, state: FSMContext):
     await state.set_state(Add.add_country)
     await call.message.answer("Введите через запятую страны, которые хотите добавить")
@@ -55,10 +65,19 @@ async def add_countries(call: CallbackQuery, state: FSMContext):
 
 
 @add.message(Add.add_country)
-async def add_countries(message: Message, state: FSMContext):
+async def add_countries(message: Message, state: FSMContext, country_list: list[str]):
+    try:
+        new_countries: list = [format_country(country) for country in message.text.split(sep=',')]
+        for country in new_countries:
+            assert country in country_list, country
+    except IndexError:
+        await message.answer("Вводите страны строго через запятую")
+        return
+    except AssertionError as e:
+        await message.answer(f'Вы неправильно ввели название одной из стран: "{e}"')
+        return
     await state.set_state(Add.input_country)
     countries: list = (await state.get_data())['countries']
-    new_countries: list = [format_country(country) for country in message.text.split(sep=',')]
     countries.extend(new_countries)
     await state.update_data(countries=countries)
     answer_string = '\n'.join([f'▪ {country}' for country in countries])
@@ -66,7 +85,7 @@ async def add_countries(message: Message, state: FSMContext):
                          reply_markup=ikb_countries)
 
 
-@add.callback_query(F.data == "delete_countries")
+@add.callback_query(F.data == "delete_countries", Add.input_country)
 async def delete_countries(call: CallbackQuery, state: FSMContext):
     await state.set_state(Add.delete_country)
     await call.message.answer("Введите через запятую страны, которые хотите удалить")
@@ -75,21 +94,25 @@ async def delete_countries(call: CallbackQuery, state: FSMContext):
 
 @add.message(Add.delete_country)
 async def delete_country(message: Message, state: FSMContext):
-    await state.set_state(Add.input_country)
+    try:
+        del_countries: list = [format_country(country) for country in message.text.split(sep=',')]
+    except IndexError:
+        await message.answer("Вводите страны строго через запятую")
+        return
     countries: list = (await state.get_data())['countries']
-    del_countries: list = [format_country(country) for country in message.text.split(sep=',')]
     for country in del_countries:
         try:
             countries.remove(country)
         except ValueError:
             pass
     await state.update_data(countries=countries)
+    await state.set_state(Add.input_country)
     answer_string = '\n'.join([f'▪ {country}' for country in countries])
     await message.answer(text="Трафик есть в следующих странах:\n" + answer_string,
                          reply_markup=ikb_countries)
 
 
-@add.callback_query(F.data == "goto_input_name")
+@add.callback_query(F.data == "goto_input_name", Add.input_country)
 async def invite_input_name(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     if data['profile_is_ready']:
@@ -171,10 +194,15 @@ async def change_countries(call: CallbackQuery, state: FSMContext):
 @add.callback_query(F.data == "save_profile", Add.show_result)
 async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
     data = await state.get_data()
-    if data['type'] == 'trader':
-        await db.add_trader(data)
-    else:
-        await db.add_merchant(data)
+    try:
+        if data['type'] == 'trader':
+            await db.add_trader(data)
+        else:
+            await db.add_merchant(data)
+    except asyncpg.exceptions.PostgresSyntaxError:
+        await call.message.answer("Не используйте в имени и описании одинарные ковычки")
+        await call.answer()
+        return
     await call.message.answer("Данные успешно сохранены", reply_markup=kb_main_menu)
     await state.clear()
     await call.answer()

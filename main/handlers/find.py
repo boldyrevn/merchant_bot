@@ -1,3 +1,4 @@
+import asyncpg
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -42,8 +43,11 @@ async def choose_find_type(messsage: Message, state: FSMContext):
         await state.set_state(Find.input_username)
     else:
         types = {"Трафик": "merchant", "Инструмент": "trader"}
+        try:
+            await state.update_data(type=types[messsage.text])
+        except KeyError:
+            return
         await state.set_state(Find.input_country)
-        await state.update_data(type=types[messsage.text])
         await messsage.answer("Введите страну, по которой будет произведен поиск",
                               reply_markup=ReplyKeyboardRemove())
 
@@ -78,11 +82,12 @@ async def find_performer(message: Message, state: FSMContext, db: DataBase):
         traders = await db.traders_by_country(country)
         await state.update_data(traders=traders)
         answer_string = '\n'.join([f'{i+1}. <em>Трейдер</em> "{trader}"' for i, trader in enumerate(traders)])
+    await state.set_state(Find.input_profile_num)
     await message.answer("<strong>Результаты поиска:</strong>\n" + answer_string,
                          parse_mode='HTML', reply_markup=ikb_choose_profile)
 
 
-@find.callback_query(F.data == "choose_profile")
+@find.callback_query(F.data == "choose_profile", Find.input_profile_num)
 async def choose_profile(call: CallbackQuery, state: FSMContext):
     await state.set_state(Find.input_profile_num)
     await call.message.answer("Введите номер профиля, который хотите просмотреть")
@@ -91,22 +96,31 @@ async def choose_profile(call: CallbackQuery, state: FSMContext):
 
 @find.message(Find.input_profile_num)
 async def show_profile(message: Message, state: FSMContext, db: DataBase):
-    index = int(message.text)
-    data = await state.get_data()
-    if data['type'] == "merchant":
-        name = data['merchants'][index - 1][1]
-        person_id = await db.get_merchant_id(name)
-        data = await db.get_merchant_data(person_id)
-    else:
-        name = data['traders'][index - 1]
-        person_id = await db.get_trader_id(name)
-        data = await db.get_trader_data(person_id)
+    try:
+        index = int(message.text)
+        data = await state.get_data()
+        if data['type'] == "merchant":
+            assert 1 <= index <= len(data['merchants'])
+            name = data['merchants'][index - 1][1]
+            person_id = await db.get_merchant_id(name)
+            data = await db.get_merchant_data(person_id)
+        else:
+            assert 1 <= index <= len(data['traders'])
+            name = data['traders'][index - 1]
+            person_id = await db.get_trader_id(name)
+            data = await db.get_trader_data(person_id)
+    except ValueError:
+        await message.answer("Значение не является числом, введите номер профиля заново")
+        return
+    except AssertionError:
+        await message.answer("Вы ввели некорректное число, введите номер профиля заново")
+        return
     await state.set_data(data)
     await state.set_state(Find.show_profile)
     await message.answer(show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
 
 
-@find.callback_query(F.data == "delete_profile")
+@find.callback_query(F.data == "delete_profile", Find.show_profile)
 async def are_you_sure(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await state.set_state(Find.delete_profile)
@@ -196,8 +210,17 @@ async def call_change_countries(call: CallbackQuery, state: FSMContext):
 
 
 @find.message(Find.edit_countries)
-async def change_countries(message: Message, state: FSMContext):
-    countries = [format_country(country) for country in message.text.split(sep=',')]
+async def change_countries(message: Message, state: FSMContext, country_list: list[str]):
+    try:
+        countries = [format_country(country) for country in message.text.split(sep=',')]
+        for country in countries:
+            assert country in country_list, country
+    except IndexError:
+        await message.answer("Вводите страны строго через запятую")
+        return
+    except AssertionError as e:
+        await message.answer(f'Вы неправильно ввели название одной из стран: "{e}"')
+        return
     await state.update_data(countries=countries)
     await state.set_state(Find.edit_profile)
     data = await state.get_data()
@@ -207,10 +230,15 @@ async def change_countries(message: Message, state: FSMContext):
 @find.callback_query(F.data == "save_profile", Find.edit_profile)
 async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
     data = await state.get_data()
-    if data['type'] == "trader":
-        await db.update_trader(data)
-    else:
-        await db.update_merchant(data)
+    try:
+        if data['type'] == 'trader':
+            await db.add_trader(data)
+        else:
+            await db.add_merchant(data)
+    except asyncpg.exceptions.PostgresSyntaxError:
+        await call.message.answer("Не используйте в имени и описании одинарные ковычки")
+        await call.answer()
+        return
     await state.set_state(Find.show_profile)
     await call.message.edit_text(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
     await call.answer("Профиль сохранен")
@@ -251,16 +279,25 @@ async def input_match_num(call: CallbackQuery, state: FSMContext):
 
 @find.message(Find.make_match)
 async def make_match(message: Message, state: FSMContext, db: DataBase):
-    index = int(message.text)
-    data = await state.get_data()
-    if data['type'] == "trader":
-        name = data['matched_merchants'][index - 1][1]
-        trader_id = data['id']
-        merchant_id = await db.get_merchant_id(name)
-    else:
-        name = data['matched_traders'][index - 1][1]
-        merchant_id = data['id']
-        trader_id = await db.get_trader_id(name)
+    try:
+        index = int(message.text)
+        data = await state.get_data()
+        if data['type'] == "trader":
+            assert 1 <= index <= len(data['matched_merchants'])
+            name = data['matched_merchants'][index - 1][1]
+            trader_id = data['id']
+            merchant_id = await db.get_merchant_id(name)
+        else:
+            assert 1 <= index <= len(data['matched_traders'])
+            name = data['matched_traders'][index - 1][1]
+            merchant_id = data['id']
+            trader_id = await db.get_trader_id(name)
+    except ValueError:
+        await message.answer("Значение не является числом, введите номер профиля заново")
+        return
+    except AssertionError:
+        await message.answer("Вы ввели некорректное число, введите номер профиля заново")
+        return
     await db.add_match(merchant_id, trader_id)
     if data['type'] == "trader":
         new_data = await db.get_trader_data(data['id'])
@@ -282,6 +319,9 @@ async def input_delete_match(call: CallbackQuery, state: FSMContext):
 async def delete_match(message: Message, state: FSMContext, db: DataBase):
     data = await state.get_data()
     name = message.text.strip()
+    if name not in [partner[0] for partner in data['partners']]:
+        await message.answer("Имя некорректно, введите его заново")
+        return
     if data['type'] == "trader":
         merchant_id = await db.get_merchant_id(name)
         trader_id = data['id']

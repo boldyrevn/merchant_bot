@@ -4,7 +4,6 @@ from aiogram import Bot
 
 async def set_commands(bot: Bot) -> None:
     commands = [
-        BotCommand(command="start", description="Начало работы"),
         BotCommand(command="reset", description="Отменяет изменения и возвращает в главное меню")
     ]
     await bot.set_my_commands(commands=commands, scope=BotCommandScopeDefault())
