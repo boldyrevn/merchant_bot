@@ -17,9 +17,9 @@ ikb_profile = InlineKeyboardMarkup(inline_keyboard=[
 ikb_profile_find = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Найти совпадения", callback_data="find_matches"),
      InlineKeyboardButton(text="Отменить сращивание", callback_data="delete_match")],
-    [InlineKeyboardButton(text="Включить поиск по странам", callback_data="turn_on_search"),
+    [InlineKeyboardButton(text="Удалить профиль", callback_data="delete_profile"),
      InlineKeyboardButton(text="Изменить профиль", callback_data="edit_profile")],
-    [InlineKeyboardButton(text="Удалить профиль", callback_data="delete_profile")]
+    [InlineKeyboardButton(text="Включить/выключить поиск по странам", callback_data="turn_on_search")]
 ])
 
 ikb_choose_profile = InlineKeyboardMarkup(inline_keyboard=[
@@ -28,4 +28,9 @@ ikb_choose_profile = InlineKeyboardMarkup(inline_keyboard=[
 
 ikb_you_sure = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Да", callback_data="yes"), InlineKeyboardButton(text="Нет", callback_data="no")]
+])
+
+ikb_show_matches = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Назад", callback_data="back_to_profile"),
+     InlineKeyboardButton(text="Сросить", callback_data="make_match")]
 ])

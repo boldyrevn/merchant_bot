@@ -5,8 +5,8 @@ from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
 
 from ..database import DataBase
 from ..keyboards import kb_chose_find, kb_main_menu,\
-    ikb_choose_profile, ikb_profile_find, ikb_profile, ikb_you_sure
-from ..misc import format_country, show_profile_db
+    ikb_choose_profile, ikb_profile_find, ikb_profile, ikb_you_sure, ikb_show_matches
+from ..misc import format_country, show_profile_db, show_matched_traders, show_matched_merchants
 
 
 class Find(StatesGroup):
@@ -21,6 +21,9 @@ class Find(StatesGroup):
     edit_description = State()
     edit_countries = State()
     delete_profile = State()
+    show_matches = State()
+    make_match = State()
+    delete_match = State()
 
 
 find = Router()
@@ -90,7 +93,7 @@ async def show_profile(message: Message, state: FSMContext, db: DataBase):
 async def are_you_sure(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await state.set_state(Find.delete_profile)
-    await call.message.answer(text=f"Вы точно хотите удалить профиль '{data['name']}'?",
+    await call.message.answer(text=f'Вы точно хотите удалить профиль "{data["name"]}"?',
                               reply_markup=ikb_you_sure)
     await call.answer()
 
@@ -194,3 +197,85 @@ async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
     await state.set_state(Find.show_profile)
     await call.message.edit_text(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
     await call.answer("Профиль сохранен")
+
+
+@find.callback_query(F.data == "find_matches", Find.show_profile)
+async def find_matches(call: CallbackQuery, state: FSMContext, db: DataBase):
+    data = await state.get_data()
+    await state.set_state(Find.show_matches)
+    if data['type'] == "trader":
+        matched_merchants = await db.find_trader_matches(data['id'])
+        await state.update_data(matched_merchants=matched_merchants)
+        await call.message.answer(text=show_matched_merchants(matched_merchants), parse_mode="HTML",
+                                  reply_markup=ikb_show_matches)
+    else:
+        matched_traders = await db.find_merchant_matches(data['id'])
+        await state.update_data(matched_traders=matched_traders)
+        await call.message.answer(text=show_matched_traders(matched_traders), parse_mode="HTML",
+                                  reply_markup=ikb_show_matches)
+    await call.answer()
+
+
+@find.callback_query(F.data == "back_to_profile", Find.show_matches)
+async def back_to_profile(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await state.set_state(Find.show_profile)
+    await call.message.answer(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
+    await call.answer()
+
+
+@find.callback_query(F.data == "make_match", Find.show_matches)
+async def input_match_num(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await state.set_state(Find.make_match)
+    await call.message.answer(f'Введите номер профиля из списка, с которым хотите сростить "{data["name"]}"')
+    await call.answer()
+
+
+@find.message(Find.make_match)
+async def make_match(message: Message, state: FSMContext, db: DataBase):
+    index = int(message.text)
+    data = await state.get_data()
+    if data['type'] == "trader":
+        name = data['matched_merchants'][index - 1][1]
+        trader_id = data['id']
+        merchant_id = await db.get_merchant_id(name)
+    else:
+        name = data['matched_traders'][index - 1][1]
+        merchant_id = data['id']
+        trader_id = await db.get_trader_id(name)
+    await db.add_match(merchant_id, trader_id)
+    if data['type'] == "trader":
+        new_data = await db.get_trader_data(data['id'])
+    else:
+        new_data = await db.get_merchant_data(data['id'])
+    await state.set_data(new_data)
+    await state.set_state(Find.show_profile)
+    await message.answer(text=show_profile_db(new_data), parse_mode="HTML", reply_markup=ikb_profile_find)
+
+
+@find.callback_query(F.data == "delete_match", Find.show_profile)
+async def input_delete_match(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Find.delete_match)
+    await call.message.answer("Введите имя человека, с которым хотите отменить сращивание")
+    await call.answer()
+
+
+@find.message(Find.delete_match)
+async def delete_match(message: Message, state: FSMContext, db: DataBase):
+    data = await state.get_data()
+    name = message.text.strip()
+    if data['type'] == "trader":
+        merchant_id = await db.get_merchant_id(name)
+        trader_id = data['id']
+        await db.delete_match(merchant_id, trader_id)
+        new_data = await db.get_trader_data(data['id'])
+    else:
+        merchant_id = data['id']
+        trader_id = await db.get_trader_id(name)
+        await db.delete_match(merchant_id, trader_id)
+        new_data = await db.get_merchant_data(data['id'])
+    await state.set_data(new_data)
+    await state.set_state(Find.show_profile)
+    await message.answer(text=show_profile_db(new_data), parse_mode="HTML", reply_markup=ikb_profile_find)
+

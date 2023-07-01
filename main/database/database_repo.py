@@ -131,7 +131,7 @@ class DataBase:
                 WHERE merchant_id = {merchant_id};
             """)
             partners: list[asyncpg.Record] = await self.conn.fetch(f"""
-                SELECT name FROM matches JOIN traders t on matches.trader_id = t.id
+                SELECT name, username FROM matches JOIN traders t on matches.trader_id = t.id
                 WHERE merchant_id = {merchant_id};
             """)
         data = {
@@ -141,7 +141,7 @@ class DataBase:
             'type': result['type'],
             'description': result['description'],
             'countries': [record['country'] for record in countries],
-            'partners': [record['name'] for record in partners]
+            'partners': [(record['name'], record['username']) for record in partners]
         }
         return data
 
@@ -156,7 +156,7 @@ class DataBase:
                 WHERE trader_id = {trader_id};
             """)
             partners: list[asyncpg.Record] = await self.conn.fetch(f"""
-                SELECT name FROM matches JOIN merchants m on matches.merchant_id = m.id
+                SELECT name, username FROM matches JOIN merchants m on matches.merchant_id = m.id
                 WHERE trader_id = {trader_id};
             """)
         data = {
@@ -166,7 +166,7 @@ class DataBase:
             'type': "trader",
             'description': result['description'],
             'countries': [record['country'] for record in countries],
-            'partners': [record['name'] for record in partners]
+            'partners': [(record['name'], record['username']) for record in partners]
         }
         return data
 
@@ -212,5 +212,48 @@ class DataBase:
                 description = '{data['description']}' WHERE id = {data['id']}
             """)
 
+    async def find_merchant_matches(self, merchant_id: int) -> list[tuple[str, str]]:
+        async with self.conn.transaction():
+            records = await self.conn.fetch(f"""
+                SELECT name, tc.country FROM merchants_countries 
+                JOIN traders_countries tc on merchants_countries.country = tc.country
+                JOIN traders t on tc.trader_id = t.id
+                WHERE merchant_id = {merchant_id} AND trader_id NOT IN (
+                    SELECT matches.trader_id FROM matches
+                    WHERE matches.merchant_id = {merchant_id}
+                )
+                ORDER BY tc.country, name;
+            """)
+        match_traders = [(record['country'], record['name']) for record in records]
+        return match_traders
 
+    async def find_trader_matches(self, trader_id: int) -> list[tuple[str, str, str]]:
+        async with self.conn.transaction():
+            records = await self.conn.fetch(f"""
+                SELECT type, name, mc.country FROM traders_countries
+                JOIN merchants_countries mc on traders_countries.country = mc.country
+                JOIN merchants m on mc.merchant_id = m.id
+                WHERE trader_id = {trader_id} AND merchant_id NOT IN (
+                    SELECT matches.merchant_id FROM matches
+                    WHERE matches.trader_id = {trader_id}
+                )
+                ORDER BY type, name, mc.country;
+            """)
+        match_merchants = [(record['type'], record['name'], record['country']) for record in records]
+        return match_merchants
+
+    async def add_match(self, merchant_id: int, trader_id: int) -> None:
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                INSERT INTO matches(merchant_id, trader_id) VALUES 
+                ({merchant_id}, {trader_id});
+            """)
+
+    async def delete_match(self, merchant_id: int, trader_id: int) -> None:
+        if merchant_id is None or trader_id is None:
+            return
+        async with self.conn.transaction():
+            await self.conn.execute(f"""
+                DELETE FROM matches WHERE trader_id = {trader_id} AND merchant_id = {merchant_id};
+            """)
 
