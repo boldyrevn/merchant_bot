@@ -14,13 +14,15 @@ class DataBase:
                     name VARCHAR(64),
                     username VARCHAR(64),
                     type VARCHAR(16),
-                    description TEXT
+                    description TEXT,
+                    in_search BOOLEAN DEFAULT TRUE
                 );
                 CREATE TABLE IF NOT EXISTS traders(
                     id SERIAL PRIMARY KEY,
                     name VARCHAR(64),
                     username VARCHAR(64),
-                    description TEXT
+                    description TEXT,
+                    in_search BOOLEAN DEFAULT TRUE
                 );
                 CREATE TABLE IF NOT EXISTS matches(
                     merchant_id INTEGER,
@@ -101,7 +103,7 @@ class DataBase:
             results: Iterable[asyncpg.Record] = await self.conn.fetch(f"""
                 SELECT name, type FROM merchants JOIN merchants_countries ON 
                 merchants.id = merchants_countries.merchant_id
-                WHERE country = '{country}'
+                WHERE country = '{country}' AND in_search
                 ORDER BY type
             """)
         merchants = []
@@ -113,7 +115,7 @@ class DataBase:
         async with self.conn.transaction():
             results: Iterable[asyncpg.Record] = await self.conn.fetch(f"""
                 SELECT name FROM traders JOIN traders_countries tc on traders.id = tc.trader_id
-                WHERE country = '{country}'
+                WHERE country = '{country}' AND in_search
             """)
         traders = []
         for record in results:
@@ -123,7 +125,7 @@ class DataBase:
     async def get_merchant_data(self, merchant_id: int) -> dict:
         async with self.conn.transaction():
             result: asyncpg.Record = await self.conn.fetchrow(f"""
-                SELECT id, name, username, type, description 
+                SELECT id, name, username, type, description, in_search 
                 FROM merchants WHERE merchants.id = {merchant_id};
             """)
             countries: list[asyncpg.Record] = await self.conn.fetch(f"""
@@ -141,14 +143,15 @@ class DataBase:
             'type': result['type'],
             'description': result['description'],
             'countries': [record['country'] for record in countries],
-            'partners': [(record['name'], record['username']) for record in partners]
+            'partners': [(record['name'], record['username']) for record in partners],
+            'in_search': result['in_search']
         }
         return data
 
     async def get_trader_data(self, trader_id: int) -> dict:
         async with self.conn.transaction():
             result: asyncpg.Record = await self.conn.fetchrow(f"""
-                SELECT id, name, username, description 
+                SELECT id, name, username, description, in_search
                 FROM traders WHERE traders.id = {trader_id};
             """)
             countries: list[asyncpg.Record] = await self.conn.fetch(f"""
@@ -166,7 +169,8 @@ class DataBase:
             'type': "trader",
             'description': result['description'],
             'countries': [record['country'] for record in countries],
-            'partners': [(record['name'], record['username']) for record in partners]
+            'partners': [(record['name'], record['username']) for record in partners],
+            'in_search': result['in_search']
         }
         return data
 
@@ -218,9 +222,9 @@ class DataBase:
                 SELECT name, tc.country FROM merchants_countries 
                 JOIN traders_countries tc on merchants_countries.country = tc.country
                 JOIN traders t on tc.trader_id = t.id
-                WHERE merchant_id = {merchant_id} AND trader_id NOT IN (
+                WHERE merchant_id = {merchant_id} AND in_search AND trader_id NOT IN (
                     SELECT matches.trader_id FROM matches
-                    WHERE matches.merchant_id = {merchant_id}
+                    WHERE matches.merchant_id = {merchant_id} 
                 )
                 ORDER BY tc.country, name;
             """)
@@ -233,7 +237,7 @@ class DataBase:
                 SELECT type, name, mc.country FROM traders_countries
                 JOIN merchants_countries mc on traders_countries.country = mc.country
                 JOIN merchants m on mc.merchant_id = m.id
-                WHERE trader_id = {trader_id} AND merchant_id NOT IN (
+                WHERE trader_id = {trader_id} AND in_search AND merchant_id NOT IN (
                     SELECT matches.merchant_id FROM matches
                     WHERE matches.trader_id = {trader_id}
                 )
@@ -257,3 +261,25 @@ class DataBase:
                 DELETE FROM matches WHERE trader_id = {trader_id} AND merchant_id = {merchant_id};
             """)
 
+    async def merchant_in_search(self, in_search: bool, merchant_id: int) -> None:
+        await self.conn.execute(f"""
+            UPDATE merchants SET in_search = {in_search}
+            WHERE id = {merchant_id};
+        """)
+
+    async def trader_in_search(self, in_search: bool, trader_id: int) -> None:
+        await self.conn.execute(f"""
+            UPDATE traders SET in_search = {in_search}
+            WHERE id = {trader_id};
+        """)
+
+    async def search_by_username(self, username: str) -> tuple[int, str]:
+        merchant_id: int | None = await self.conn.fetchval(f"""
+            SELECT id FROM merchants WHERE username = '{username}';
+        """)
+        trader_id: int | None = await self.conn.fetchval(f"""
+            SELECT id FROM traders WHERE username = '{username}';
+        """)
+        if merchant_id is not None:
+            return merchant_id, 'merchant'
+        return trader_id, 'trader'

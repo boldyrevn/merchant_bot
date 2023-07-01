@@ -38,6 +38,7 @@ async def find_entity(message: Message, state: FSMContext):
 @find.message(Find.choose_type)
 async def choose_find_type(messsage: Message, state: FSMContext):
     if messsage.text == "Поиск по юзернейму":
+        await messsage.answer("Введите юзернейм, по которому будет произведен поиск")
         await state.set_state(Find.input_username)
     else:
         types = {"Трафик": "merchant", "Инструмент": "trader"}
@@ -45,6 +46,19 @@ async def choose_find_type(messsage: Message, state: FSMContext):
         await state.update_data(type=types[messsage.text])
         await messsage.answer("Введите страну, по которой будет произведен поиск",
                               reply_markup=ReplyKeyboardRemove())
+
+
+@find.message(Find.input_username)
+async def search_by_username(message: Message, state: FSMContext, db: DataBase):
+    username = message.text.strip()
+    result = await db.search_by_username(username)
+    if result[1] == "merchant":
+        data = await db.get_merchant_data(result[0])
+    else:
+        data = await db.get_trader_data(result[0])
+    await state.set_data(data)
+    await state.set_state(Find.show_profile)
+    await message.answer(show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
 
 
 @find.message(Find.input_country)
@@ -55,7 +69,8 @@ async def find_performer(message: Message, state: FSMContext, db: DataBase):
         types = {"merchant": "Мерчант", "platform": "Площадка"}
         merchants = await db.merchants_by_country(country)
         await state.update_data(merchants=merchants)
-        answer_string = '\n'.join([f'{i+1}. <em>{types[merch[0]]}</em> "{merch[1]}"' for i, merch in enumerate(merchants)])
+        answer_string = '\n'.join([f'{i+1}. <em>{types[merch[0]]}</em> "{merch[1]}"'
+                                   for i, merch in enumerate(merchants)])
     else:
         traders = await db.traders_by_country(country)
         await state.update_data(traders=traders)
@@ -85,7 +100,6 @@ async def show_profile(message: Message, state: FSMContext, db: DataBase):
         data = await db.get_trader_data(person_id)
     await state.set_data(data)
     await state.set_state(Find.show_profile)
-    await state.update_data(persn_id=person_id)
     await message.answer(show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
 
 
@@ -278,4 +292,18 @@ async def delete_match(message: Message, state: FSMContext, db: DataBase):
     await state.set_data(new_data)
     await state.set_state(Find.show_profile)
     await message.answer(text=show_profile_db(new_data), parse_mode="HTML", reply_markup=ikb_profile_find)
+
+
+@find.callback_query(F.data == "turn_on_search", Find.show_profile)
+async def turn_on_search(call: CallbackQuery, state: FSMContext, db: DataBase):
+    data = await state.get_data()
+    data['in_search'] = not data['in_search']
+    await state.update_data(in_search=data['in_search'])
+    if data['type'] == "trader":
+        await db.trader_in_search(data['in_search'], data['id'])
+    else:
+        await db.merchant_in_search(data['in_search'], data['id'])
+    await call.message.edit_text(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
+    await call.answer()
+
 

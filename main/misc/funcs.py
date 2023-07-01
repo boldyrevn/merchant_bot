@@ -31,10 +31,14 @@ def show_profile(data: dict) -> str:
 def show_profile_db(data: dict) -> str:
     profile_text = show_profile(data)
     if not data['partners']:
-        profile_text += "<em>Ни с кем не срощен</em>"
+        profile_text += "<em>Ни с кем не срощен\n</em>"
     else:
         partners_list = '\n'.join([f" - {partner[0]} {partner[1]}" for partner in data['partners']])
-        profile_text += f"<em>Срощен с</em>:\n{partners_list}"
+        profile_text += f"<em>Срощен с</em>:\n{partners_list}\n"
+    if data['in_search']:
+        profile_text += "<em>Поиск по странам включен</em>"
+    else:
+        profile_text += "<em>Поиск по странам выключен</em>"
     return profile_text
 
 
