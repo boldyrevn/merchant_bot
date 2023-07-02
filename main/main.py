@@ -22,8 +22,9 @@ async def on_shutdown(db: DataBase):
 async def start() -> None:
     bot = Bot(token=os.environ['TOKEN_API'])
     dp = Dispatcher()
-    connection = await asyncpg.connect(host="localhost", port=5432, user="merchant_bot",
-                                       database="merchant_bot_db", password="2112")
+    connection = await asyncpg.connect(host=os.environ['PG_HOST'], port=os.environ['PG_PORT'],
+                                       user=os.environ['PG_USER'], database=os.environ['PG_DATABASE'],
+                                       password=os.environ['PG_PASSWORD'])
     db = DataBase(connection)
     with open('countries.txt', 'r', encoding='utf-8') as file:
         country_list: list[str] = [format_country(country) for country in list(file)]
