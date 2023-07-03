@@ -9,5 +9,5 @@ kb_chose_entity = ReplyKeyboardMarkup(keyboard=[
 ], resize_keyboard=True)
 
 kb_chose_find = ReplyKeyboardMarkup(keyboard=[
-    [KeyboardButton(text="Трафик"), KeyboardButton(text="Инструмент"), KeyboardButton(text="Поиск по юзернейму")]
+    [KeyboardButton(text="Мерчант/площадка"), KeyboardButton(text="Трейдер"), KeyboardButton(text="Поиск по юзернейму")]
 ], resize_keyboard=True)

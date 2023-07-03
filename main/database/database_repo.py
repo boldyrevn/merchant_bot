@@ -53,7 +53,7 @@ class DataBase:
             await self.conn.execute(f"""
                 INSERT INTO merchants(name, username, type, description) VALUES
                 ('{data['name']}', '{data['username']}', '{data['type']}',
-                 '{repr(data['description'])}');
+                 '{data['description']}');
             """)
             merchant_id = await self.get_merchant_id(data['name'])
             await self.add_merchant_countries(merchant_id, data['countries'])

@@ -97,7 +97,7 @@ async def delete_country(message: Message, state: FSMContext):
     try:
         del_countries: list = [format_country(country) for country in message.text.split(sep=',')]
     except IndexError:
-        await message.answer("Вводите страны строго через запятую")
+        await message.answer("Вводите страны строго через одну запятую")
         return
     countries: list = (await state.get_data())['countries']
     for country in del_countries:
@@ -141,6 +141,12 @@ async def input_name(message: Message, state: FSMContext):
 @add.message(Add.input_username)
 async def input_username(message: Message, state: FSMContext):
     username = message.text.strip()
+    try:
+        assert username[0] == '@'
+        assert ' ' not in username
+    except AssertionError:
+        await message.answer("Неправильный формат ввода, введите юзернейм в виде @username")
+        return
     await state.update_data(username=username)
     data = await state.get_data()
     if data['profile_is_ready']:
