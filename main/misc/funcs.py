@@ -66,6 +66,7 @@ def show_matches(matches: list[Sequence[str]]) -> str:
     if len(matches) == 0:
         return "<strong>Совпадений нет</strong>"
     types = {"merchant": "мерчант", "platform": "площадка"}
-    match_list = '\n'.join([f'{i + 1}. {types[match[0]]} {match[1]} -> трейдер {match[2]}: {match[3]}'
+    match_list = '\n'.join([f'<strong>{i + 1}.</strong> <em>{types[match[0]]}</em> "{match[1]}" '
+                            f'- <em>трейдер</em> "{match[2]}": {match[3]}'
                             for i, match in enumerate(matches)])
     return f"<strong>Совпадения:</strong>\n{match_list}"

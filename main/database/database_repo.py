@@ -345,7 +345,7 @@ class DataBase:
              FROM merchants JOIN merchants_countries mc on merchants.id = mc.merchant_id
             JOIN traders_countries tc on mc.country = tc.country
             JOIN traders t on tc.trader_id = t.id
-            WHERE merchants.in_search AND t.in_search
-            ORDER BY merchants.name, t.name, tc.country
+            WHERE merchants.in_search AND t.in_search AND merchants.in_search
+            ORDER BY merchants.type, merchants.name, t.name, tc.country
         """)
         return [(record['type'], record['m_name'], record['t_name'], record['country']) for record in records]
