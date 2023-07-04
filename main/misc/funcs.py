@@ -1,3 +1,5 @@
+from typing import Sequence
+
 from aiogram.types import BotCommand, BotCommandScopeDefault
 from aiogram import Bot
 
@@ -29,11 +31,13 @@ def show_profile(data: dict) -> str:
 
 def show_profile_db(data: dict) -> str:
     profile_text = show_profile(data)
-    if not data['partners']:
+    if data['partner_id'] is None:
         profile_text += "<em>Ни с кем не срощен\n</em>"
     else:
-        partners_list = '\n'.join([f" - {partner[0]} {partner[1]}" for partner in data['partners']])
-        profile_text += f"<em>Срощен с</em>:\n{partners_list}\n"
+        countries_list = '\n'.join([f'▪️ {country}' for country in data['merged_countries']])
+        partner_string = f'<em>Срощен с</em> "{data["partner_name"]}" {data["partner_username"]} по странам:\n' \
+                         f'{countries_list}\n'
+        profile_text += partner_string
     if data['in_search']:
         profile_text += "<em>Поиск по странам включен</em>"
     else:
@@ -42,29 +46,26 @@ def show_profile_db(data: dict) -> str:
 
 
 def show_matched_traders(traders: list[tuple[str, str]]) -> str:
-    if len(traders) == 0:
-        traders_list = "<em>Совпадений не найдено</em>"
-    else:
-        traders_list = '\n'.join([f'{i + 1}. <em>Трейдер</em> "{trader[1]}" - {trader[0]}'
-                                  for i, trader in enumerate(traders)])
+    traders_list = '\n'.join([f'{i + 1}. <em>Трейдер</em> "{trader[0]}": {trader[1]}'
+                              for i, trader in enumerate(traders)])
     answer_string = f"<strong>Совпадения:</strong>\n" \
                     f"{traders_list}"
     return answer_string
 
 
 def show_matched_merchants(merchants: list[tuple[str, str, str]]) -> str:
-    if len(merchants) == 0:
-        merchants_list = "<em>Совпадений не найдено</em>"
-    else:
-        roles = {"merchant": "Мерчант", "platform": "Площадка"}
-        merchants_list = '\n'.join([f'{i + 1}. <em>{roles[merch[0]]}</em> "{merch[1]}" - {merch[2]}'
-                                  for i, merch in enumerate(merchants)])
+    roles = {"merchant": "Мерчант", "platform": "Площадка"}
+    merchants_list = '\n'.join([f'{i + 1}. <em>{roles[merch[0]]}</em> "{merch[1]}": {merch[2]}'
+                                for i, merch in enumerate(merchants)])
     answer_string = f"<strong>Совпадения:</strong>\n" \
                     f"{merchants_list}"
     return answer_string
 
 
-def show_matches(matches: list[tuple[str, str, str]]) -> str:
+def show_matches(matches: list[Sequence[str]]) -> str:
+    if len(matches) == 0:
+        return "<strong>Совпадений нет</strong>"
     types = {"merchant": "мерчант", "platform": "площадка"}
-    match_list = '\n'.join([f'- {types[match[0]]} "{match[1]}" -> трейдер "{match[2]}"' for match in matches])
+    match_list = '\n'.join([f'{i + 1}. {types[match[0]]} {match[1]} -> трейдер {match[2]}: {match[3]}'
+                            for i, match in enumerate(matches)])
     return f"<strong>Совпадения:</strong>\n{match_list}"

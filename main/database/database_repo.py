@@ -15,31 +15,28 @@ class DataBase:
                     username VARCHAR(64),
                     type VARCHAR(16),
                     description TEXT,
-                    in_search BOOLEAN DEFAULT TRUE
+                    in_search BOOLEAN DEFAULT TRUE,
+                    partner_id INTEGER
                 );
                 CREATE TABLE IF NOT EXISTS traders(
                     id SERIAL PRIMARY KEY,
                     name VARCHAR(64),
                     username VARCHAR(64),
                     description TEXT,
-                    in_search BOOLEAN DEFAULT TRUE
-                );
-                CREATE TABLE IF NOT EXISTS matches(
-                    merchant_id INTEGER,
-                    trader_id INTEGER,
-                    PRIMARY KEY(merchant_id, trader_id),
-                    FOREIGN KEY(merchant_id) REFERENCES merchants(id) ON DELETE CASCADE,
-                    FOREIGN KEY(trader_id) REFERENCES traders(id) ON DELETE CASCADE
+                    in_search BOOLEAN DEFAULT TRUE,
+                    partner_id INTEGER
                 );
                 CREATE TABLE IF NOT EXISTS merchants_countries(
                     merchant_id INTEGER,
                     country VARCHAR(32),
+                    is_merged BOOLEAN DEFAULT FALSE,
                     PRIMARY KEY(merchant_id, country),
                     FOREIGN KEY(merchant_id) REFERENCES merchants(id) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS traders_countries(
                     trader_id INTEGER,
                     country VARCHAR(32),
+                    is_merged BOOLEAN DEFAULT FALSE,
                     PRIMARY KEY(trader_id, country),
                     FOREIGN KEY(trader_id) REFERENCES traders(id) ON DELETE CASCADE
                 );
@@ -126,16 +123,16 @@ class DataBase:
     async def get_merchant_data(self, merchant_id: int) -> dict:
         async with self.conn.transaction():
             result: asyncpg.Record = await self.conn.fetchrow(f"""
-                SELECT id, name, username, type, description, in_search 
+                SELECT id, name, username, type, description, in_search, partner_id
                 FROM merchants WHERE merchants.id = {merchant_id};
             """)
             countries: list[asyncpg.Record] = await self.conn.fetch(f"""
                 SELECT country FROM merchants_countries 
                 WHERE merchant_id = {merchant_id};
             """)
-            partners: list[asyncpg.Record] = await self.conn.fetch(f"""
-                SELECT name, username FROM matches JOIN traders t on matches.trader_id = t.id
-                WHERE merchant_id = {merchant_id};
+            merged_countries: list[asyncpg.Record] = await self.conn.fetch(f"""
+                SELECT country FROM merchants_countries WHERE
+                merchant_id = {merchant_id} AND is_merged
             """)
         data = {
             'id': result['id'],
@@ -144,24 +141,31 @@ class DataBase:
             'type': result['type'],
             'description': result['description'],
             'countries': [record['country'] for record in countries],
-            'partners': [(record['name'], record['username']) for record in partners],
-            'in_search': result['in_search']
+            'merged_countries': [record['country'] for record in merged_countries],
+            'in_search': result['in_search'],
+            'partner_id': result['partner_id'],
+            'partner_name': None,
+            'partner_username': None
         }
+        partner = await self.get_partner_data(data['partner_id'], data['type'])
+        if partner is not None:
+            data['partner_name'] = partner[0]
+            data['partner_username'] = partner[1]
         return data
 
     async def get_trader_data(self, trader_id: int) -> dict:
         async with self.conn.transaction():
             result: asyncpg.Record = await self.conn.fetchrow(f"""
-                SELECT id, name, username, description, in_search
+                SELECT id, name, username, description, in_search, partner_id
                 FROM traders WHERE traders.id = {trader_id};
             """)
             countries: list[asyncpg.Record] = await self.conn.fetch(f"""
                 SELECT country FROM traders_countries 
                 WHERE trader_id = {trader_id};
             """)
-            partners: list[asyncpg.Record] = await self.conn.fetch(f"""
-                SELECT name, username FROM matches JOIN merchants m on matches.merchant_id = m.id
-                WHERE trader_id = {trader_id};
+            merged_countries: list[asyncpg.Record] = await self.conn.fetch(f"""
+                SELECT country FROM traders_countries WHERE
+                trader_id = {trader_id} AND is_merged
             """)
         data = {
             'id': result['id'],
@@ -170,10 +174,30 @@ class DataBase:
             'type': "trader",
             'description': result['description'],
             'countries': [record['country'] for record in countries],
-            'partners': [(record['name'], record['username']) for record in partners],
-            'in_search': result['in_search']
+            'merged_countries': [record['country'] for record in merged_countries],
+            'in_search': result['in_search'],
+            'partner_id': result['partner_id'],
+            'partner_name': None,
+            'partner_username': None
         }
+        partner = await self.get_partner_data(data['partner_id'], data['type'])
+        if partner is not None:
+            data['partner_name'] = partner[0]
+            data['partner_username'] = partner[1]
         return data
+
+    async def get_partner_data(self, partner_id: int, person_type: str) -> tuple[str, str] | None:
+        if partner_id is None:
+            return None
+        if person_type == "trader":
+            partner: asyncpg.Record = await self.conn.fetchrow(f"""
+                SELECT name, username FROM merchants WHERE id = {partner_id}
+            """)
+        else:
+            partner: asyncpg.Record = await self.conn.fetchrow(f"""
+                SELECT name, username FROM traders WHERE id = {partner_id}
+            """)
+        return partner['name'], partner['username']
 
     async def delete_merchant(self, merchant_id: int) -> None:
         async with self.conn.transaction():
@@ -200,8 +224,9 @@ class DataBase:
             """)
 
     async def update_merchant(self, data: dict) -> None:
-        await self.delete_merchant_countries(data['id'])
-        await self.add_merchant_countries(data['id'], data['countries'])
+        if data['partner_id'] is None:
+            await self.delete_merchant_countries(data['id'])
+            await self.add_merchant_countries(data['id'], data['countries'])
         async with self.conn.transaction():
             await self.conn.execute(f"""
                 UPDATE merchants SET name = '{data['name']}', username = '{data['username']}',
@@ -209,58 +234,87 @@ class DataBase:
             """)
 
     async def update_trader(self, data: dict) -> None:
-        await self.delete_trader_countries(data['id'])
-        await self.add_trader_countries(data['id'], data['countries'])
+        if data['partner_id'] is None:
+            await self.delete_trader_countries(data['id'])
+            await self.add_trader_countries(data['id'], data['countries'])
         async with self.conn.transaction():
             await self.conn.execute(f"""
                 UPDATE traders SET name = '{data['name']}', username = '{data['username']}',
                 description = '{data['description']}' WHERE id = {data['id']}
             """)
 
-    async def find_merchant_matches(self, merchant_id: int) -> list[tuple[str, str]]:
-        async with self.conn.transaction():
+    async def find_merchant_matches(self, merchant_id: int, partner_id: int | None) -> list[tuple[str, str]]:
+        if partner_id is None:
             records = await self.conn.fetch(f"""
-                SELECT name, tc.country FROM merchants_countries 
-                JOIN traders_countries tc on merchants_countries.country = tc.country
+                SELECT t.name, tc.country FROM merchants m 
+                JOIN merchants_countries mc on m.id = mc.merchant_id
+                JOIN traders_countries tc on mc.country = tc.country
                 JOIN traders t on tc.trader_id = t.id
-                WHERE merchant_id = {merchant_id} AND in_search AND trader_id NOT IN (
-                    SELECT matches.trader_id FROM matches
-                    WHERE matches.merchant_id = {merchant_id} 
-                )
-                ORDER BY tc.country, name;
+                WHERE m.id = {merchant_id} AND t.partner_id IS NULL
+                ORDER BY t.name, tc.country;
             """)
-        match_traders = [(record['country'], record['name']) for record in records]
+        else:
+            records = await self.conn.fetch(f"""
+                SELECT t.name, tc.country FROM merchants m 
+                JOIN merchants_countries mc on m.id = mc.merchant_id
+                JOIN traders_countries tc on mc.country = tc.country
+                JOIN traders t on tc.trader_id = t.id
+                WHERE m.id = {merchant_id} AND t.id = {partner_id} AND NOT tc.is_merged
+                ORDER BY t.name, tc.country;
+            """)
+        match_traders = [(record['name'], record['country']) for record in records]
         return match_traders
 
-    async def find_trader_matches(self, trader_id: int) -> list[tuple[str, str, str]]:
-        async with self.conn.transaction():
+    async def find_trader_matches(self, trader_id: int, partner_id: int | None) -> list[tuple[str, str, str]]:
+        if partner_id is None:
             records = await self.conn.fetch(f"""
-                SELECT type, name, mc.country FROM traders_countries
-                JOIN merchants_countries mc on traders_countries.country = mc.country
+                SELECT m.type, m.name, mc.country FROM traders t 
+                JOIN traders_countries tc on t.id = tc.trader_id
+                JOIN merchants_countries mc on tc.country = mc.country
                 JOIN merchants m on mc.merchant_id = m.id
-                WHERE trader_id = {trader_id} AND in_search AND merchant_id NOT IN (
-                    SELECT matches.merchant_id FROM matches
-                    WHERE matches.trader_id = {trader_id}
-                )
-                ORDER BY type, name, mc.country;
+                WHERE t.id = {trader_id} AND m.partner_id IS NULL
+                ORDER BY m.type, m.name, mc.country;
+            """)
+        else:
+            records = await self.conn.fetch(f"""
+                SELECT m.type, m.name, mc.country FROM traders t 
+                JOIN traders_countries tc on t.id = tc.trader_id
+                JOIN merchants_countries mc on tc.country = mc.country
+                JOIN merchants m on mc.merchant_id = m.id
+                WHERE t.id = {trader_id} AND m.id = {partner_id} AND NOT mc.is_merged
+                ORDER BY m.type, m.name, mc.country;
             """)
         match_merchants = [(record['type'], record['name'], record['country']) for record in records]
         return match_merchants
 
-    async def add_match(self, merchant_id: int, trader_id: int) -> None:
+    async def add_match(self, merchant_id: int, trader_id: int, country: str) -> None:
         async with self.conn.transaction():
             await self.conn.execute(f"""
-                INSERT INTO matches(merchant_id, trader_id) VALUES 
-                ({merchant_id}, {trader_id});
+                UPDATE merchants SET partner_id = {trader_id}
+                WHERE id = {merchant_id};
+                UPDATE traders SET partner_id = {merchant_id}
+                WHERE id = {trader_id};
+                UPDATE merchants_countries SET is_merged = TRUE
+                WHERE merchant_id = {merchant_id} AND country = '{country}';
+                UPDATE traders_countries SET is_merged = TRUE
+                WHERE trader_id = {trader_id} AND country = '{country}';
             """)
 
+    async def delete_match_country(self, merchant_id: int, trader_id: int, country: str) -> None:
+        await self.conn.execute(f"""
+            UPDATE merchants_countries SET is_merged = FALSE 
+            WHERE merchant_id = {merchant_id} AND country = '{country}';
+            UPDATE traders_countries SET is_merged = FALSE 
+            WHERE trader_id = {trader_id} AND country = '{country}';
+        """)
+
     async def delete_match(self, merchant_id: int, trader_id: int) -> None:
-        if merchant_id is None or trader_id is None:
-            return
-        async with self.conn.transaction():
-            await self.conn.execute(f"""
-                DELETE FROM matches WHERE trader_id = {trader_id} AND merchant_id = {merchant_id};
-            """)
+        await self.conn.execute(f"""
+            UPDATE merchants SET partner_id = NULL
+            WHERE id = {merchant_id};
+            UPDATE traders SET partner_id = NULL
+            WHERE id = {trader_id};
+        """)
 
     async def merchant_in_search(self, in_search: bool, merchant_id: int) -> None:
         await self.conn.execute(f"""
@@ -285,10 +339,13 @@ class DataBase:
             return merchant_id, 'merchant'
         return trader_id, 'trader'
 
-    async def get_all_matches(self) -> list[tuple[str, str, str]]:
-        records: list[asyncpg.Record] = await self.conn.fetch(f"""
-            SELECT type, merchants.name merchant, t.name trader 
-            FROM merchants JOIN matches m on merchants.id = m.merchant_id
-            JOIN traders t on m.trader_id = t.id
+    async def get_all_matches(self) -> list[Sequence[str]]:
+        records = await self.conn.fetch(f"""
+            SELECT merchants.name m_name, merchants.type, t.name t_name, tc.country  
+             FROM merchants JOIN merchants_countries mc on merchants.id = mc.merchant_id
+            JOIN traders_countries tc on mc.country = tc.country
+            JOIN traders t on tc.trader_id = t.id
+            WHERE merchants.in_search AND t.in_search
+            ORDER BY merchants.name, t.name, tc.country
         """)
-        return [(record['type'], record['merchant'], record['trader']) for record in records]
+        return [(record['type'], record['m_name'], record['t_name'], record['country']) for record in records]

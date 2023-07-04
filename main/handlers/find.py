@@ -58,7 +58,8 @@ async def search_by_username(message: Message, state: FSMContext, db: DataBase):
     username = message.text.strip()
     result = await db.search_by_username(username)
     if result[0] is None:
-        await message.answer("Неверный юзернейм, введите заново")
+        await message.answer("Неверный юзернейм, введите его заново или вернитесь в главное меню с помощью команды "
+                             "/reset")
         return
     if result[1] == "merchant":
         data = await db.get_merchant_data(result[0])
@@ -132,6 +133,9 @@ async def show_profile(message: Message, state: FSMContext, db: DataBase):
 @find.callback_query(F.data == "delete_profile", Find.show_profile)
 async def are_you_sure(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+    if data['partner_id'] is not None:
+        await call.answer(f"Вы не можете удалить профиль, пока он с кем-либо срощен")
+        return
     await state.set_state(Find.delete_profile)
     await call.message.answer(text=f'Вы точно хотите удалить профиль "{data["name"]}"?',
                               reply_markup=ikb_you_sure)
@@ -219,6 +223,10 @@ async def change_description(message: Message, state: FSMContext):
 
 @find.callback_query(F.data == "change_countries", Find.edit_profile)
 async def call_change_countries(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if data['partner_id'] is not None:
+        await call.answer("Вы не можете изменить список стран, пока профиль с кем-либо срощен")
+        return
     await call.message.answer("Введите новый список стран через запятую")
     await state.set_state(Find.edit_countries)
     await call.answer()
@@ -275,15 +283,16 @@ async def discard_changes(call: CallbackQuery, state: FSMContext, db: DataBase):
 @find.callback_query(F.data == "find_matches", Find.show_profile)
 async def find_matches(call: CallbackQuery, state: FSMContext, db: DataBase):
     data = await state.get_data()
+    partner_id = data.get('partner_id', None)
     try:
         if data['type'] == "trader":
-            matched_merchants = await db.find_trader_matches(data['id'])
+            matched_merchants = await db.find_trader_matches(data['id'], partner_id)
             assert len(matched_merchants) > 0
             await state.update_data(matched_merchants=matched_merchants)
             await call.message.answer(text=show_matched_merchants(matched_merchants), parse_mode="HTML",
                                       reply_markup=ikb_show_matches)
         else:
-            matched_traders = await db.find_merchant_matches(data['id'])
+            matched_traders = await db.find_merchant_matches(data['id'], partner_id)
             assert len(matched_traders) > 0
             await state.update_data(matched_traders=matched_traders)
             await call.message.answer(text=show_matched_traders(matched_traders), parse_mode="HTML",
@@ -326,11 +335,13 @@ async def make_match(message: Message, state: FSMContext, db: DataBase):
         if data['type'] == "trader":
             assert 1 <= index <= len(data['matched_merchants'])
             name = data['matched_merchants'][index - 1][1]
+            country = data['matched_merchants'][index - 1][2]
             trader_id = data['id']
             merchant_id = await db.get_merchant_id(name)
         else:
             assert 1 <= index <= len(data['matched_traders'])
-            name = data['matched_traders'][index - 1][1]
+            name = data['matched_traders'][index - 1][0]
+            country = data['matched_traders'][index - 1][1]
             merchant_id = data['id']
             trader_id = await db.get_trader_id(name)
     except ValueError:
@@ -339,7 +350,7 @@ async def make_match(message: Message, state: FSMContext, db: DataBase):
     except AssertionError:
         await message.answer("Вы ввели некорректное число, введите номер профиля заново")
         return
-    await db.add_match(merchant_id, trader_id)
+    await db.add_match(merchant_id, trader_id, country)
     if data['type'] == "trader":
         new_data = await db.get_trader_data(data['id'])
     else:
@@ -352,31 +363,32 @@ async def make_match(message: Message, state: FSMContext, db: DataBase):
 @find.callback_query(F.data == "delete_match", Find.show_profile)
 async def input_delete_match(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    if len(data['partners']) == 0:
+    if len(data['merged_countries']) == 0:
         await call.answer("Профиль ни с кем не срощен")
         return
     await state.set_state(Find.delete_match)
-    await call.message.answer("Введите имя человека, с которым хотите отменить сращивание")
+    await call.message.answer("Введите название страны, по которой хотите отменить сращивание")
     await call.answer()
 
 
 @find.message(Find.delete_match)
 async def delete_match(message: Message, state: FSMContext, db: DataBase):
     data = await state.get_data()
-    name = message.text.strip()
-    if name not in [partner[0] for partner in data['partners']]:
-        await message.answer("Имя некорректно, введите его заново")
+    country = message.text.strip()
+    if country not in data['merged_countries']:
+        await message.answer("Такой страны нет в списке, введите название заново")
         return
     if data['type'] == "trader":
-        merchant_id = await db.get_merchant_id(name)
+        merchant_id = data['partner_id']
         trader_id = data['id']
-        await db.delete_match(merchant_id, trader_id)
-        new_data = await db.get_trader_data(data['id'])
+        await db.delete_match_country(merchant_id, trader_id, country)
     else:
         merchant_id = data['id']
-        trader_id = await db.get_trader_id(name)
+        trader_id = data['partner_id']
+        await db.delete_match_country(merchant_id, trader_id, country)
+    if len(data['merged_countries']) == 1:
         await db.delete_match(merchant_id, trader_id)
-        new_data = await db.get_merchant_data(data['id'])
+    new_data = await db.get_trader_data(data['id'])
     await state.set_data(new_data)
     await state.set_state(Find.show_profile)
     await message.answer(text=show_profile_db(new_data), parse_mode="HTML", reply_markup=ikb_profile_find)
