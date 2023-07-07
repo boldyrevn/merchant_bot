@@ -161,7 +161,7 @@ async def not_delete_profile(call: CallbackQuery, state: FSMContext):
     await call.message.answer(text=show_profile_db(data), parse_mode="HTML", reply_markup=ikb_profile_find)
 
 
-@find.callback_query(F.data == "edit_profile")
+@find.callback_query(F.data == "edit_profile", Find.show_profile)
 async def change_profile(call: CallbackQuery, state: FSMContext):
     await call.message.edit_reply_markup(reply_markup=ikb_profile_find_change)
     await state.set_state(Find.edit_profile)
