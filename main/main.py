@@ -10,8 +10,7 @@ from .handlers import root, add, find
 from .misc import set_commands, format_country
 
 
-async def on_start(bot: Bot, db: DataBase):
-    await db.init()
+async def on_start(bot: Bot):
     await set_commands(bot)
 
 
@@ -22,9 +21,7 @@ async def on_shutdown(db: DataBase):
 async def start() -> None:
     bot = Bot(token=os.environ['TOKEN_API'])
     dp = Dispatcher()
-    connection = await asyncpg.connect(host=os.environ['PG_HOST'], port=os.environ['PG_PORT'],
-                                       user=os.environ['PG_USER'], database=os.environ['PG_DATABASE'],
-                                       password=os.environ['PG_PASSWORD'])
+    connection = await asyncpg.connect(os.environ['PG_URI'])
     db = DataBase(connection)
     with open('countries.txt', 'r', encoding='utf-8') as file:
         country_list: list[str] = [format_country(country) for country in list(file)]

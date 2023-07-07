@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "merchant-bot"
 version = "0.1.0"
-description = "simple bot for one guy"
+description = "simple bot for commercial use"
 authors = ["boldyrevn <boldyrev.now@mail.ru>"]
 readme = "README.md"
 packages = [{include = "merchant_bot"}]
@@ -12,6 +12,8 @@ aiogram = {version = "^3.0.0b7", allow-prereleases = true}
 python-dotenv = "^1.0.0"
 aiohttp = "^3.8.4"
 asyncpg = "^0.27.0"
+yoyo-migrations = "^8.2.0"
+psycopg2 = "^2.9.6"
 
 [build-system]
 requires = ["poetry-core"]
