@@ -126,7 +126,7 @@ async def invite_input_name(call: CallbackQuery, state: FSMContext):
 
 
 @add.message(Add.input_name)
-async def input_name(message: Message, state: FSMContext):
+async def input_name(message: Message, state: FSMContext, db: DataBase):
     name = message.text.strip()
     await state.update_data(name=name)
     data = await state.get_data()
@@ -134,12 +134,18 @@ async def input_name(message: Message, state: FSMContext):
         await message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
         await state.set_state(Add.show_result)
     else:
+        if data['type'] == 'trader' and await db.name_in_traders(name):
+            await message.answer("Трейдер с таким именем уже существует, введите другое имя")
+            return
+        elif data['type'] != 'trader' and await db.name_in_merchants(name):
+            await message.answer("Мерчант с таким именем уже существует, введите другое имя")
+            return
         await message.answer("Введите юзернейм телеграм в формате @username")
         await state.set_state(Add.input_username)
 
 
 @add.message(Add.input_username)
-async def input_username(message: Message, state: FSMContext):
+async def input_username(message: Message, state: FSMContext, db: DataBase):
     username = message.text.strip()
     try:
         assert username[0] == '@'
@@ -153,6 +159,12 @@ async def input_username(message: Message, state: FSMContext):
         await message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
         await state.set_state(Add.show_result)
     else:
+        if data['type'] == 'trader' and await db.username_in_traders(username):
+            await message.answer("Трейдер с таким юзернеймом уже существует, введите другой юзернейм")
+            return
+        elif data['type'] != 'trader' and await db.username_in_merchants(username):
+            await message.answer("Мерчант с таким юзернеймом уже существует, введите другой юзернейм")
+            return
         await message.answer("Введите описание")
         await state.set_state(Add.input_description)
 
@@ -160,7 +172,9 @@ async def input_username(message: Message, state: FSMContext):
 @add.message(Add.input_description)
 async def input_description(message: Message, state: FSMContext):
     description = message.text.strip()
-    await state.update_data(description=description, profile_is_ready=True)
+    await state.update_data(description=description,
+                            profile_is_ready=True,
+                            admin_username=message.from_user.username)
     await state.set_state(Add.show_result)
     data = await state.get_data()
     await message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
@@ -207,6 +221,7 @@ async def save_profile(call: CallbackQuery, state: FSMContext, db: DataBase):
             await db.add_merchant(data)
     except asyncpg.exceptions.PostgresSyntaxError:
         await call.message.answer("Не используйте в имени и описании одинарные ковычки")
+        await call.message.answer(text=show_profile(data), parse_mode="HTML", reply_markup=ikb_profile)
         await call.answer()
         return
     await call.message.answer("Данные успешно сохранены", reply_markup=kb_main_menu)
