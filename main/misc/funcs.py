@@ -20,7 +20,8 @@ def format_country(country: str) -> str:
 def show_profile(data: dict) -> str:
     roles = {"merchant": "Мерчант", "platform": "Площадка", "trader": "Трейдер"}
     countries_list = '\n'.join([f'▪ {country}' for country in data['countries']])
-    profile_text = f"<strong>{roles[data['type']]}</strong> (добавлен админом: @{data['admin_username']})\n" \
+    admin_name = f"@{data['admin_username']}" if data['admin_username'] != "Unknown" else "неизвестно"
+    profile_text = f"<strong>{roles[data['type']]}</strong> (добавлен админом: {admin_name})\n" \
                    f"<em>Имя</em>: {data['name']}\n" \
                    f"<em>Юзернейм</em>: {data['username']}\n" \
                    f"<em>Список стран</em>:\n" \
